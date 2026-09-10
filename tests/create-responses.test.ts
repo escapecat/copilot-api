@@ -91,6 +91,69 @@ afterEach(() => {
 })
 
 describe("createResponses", () => {
+  test("projects 51 historical images to 50 before HTTP forwarding without editing caller history", async () => {
+    const payload: ResponsesPayload = {
+      model: "gpt-test",
+      input: [
+        {
+          role: "user",
+          content: Array.from({ length: 51 }, (_, i) => ({
+            type: "input_image",
+            image_url: `https://example.invalid/${i}.png`,
+          })),
+        },
+        { role: "user", content: "hi" },
+      ],
+    }
+    const original = structuredClone(payload)
+    await createResponses(payload, {
+      initiator: "user",
+      requestId: "images",
+      vision: true,
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const body = fetchMock.mock.calls[0][1]?.body as string
+    expect(body.match(/"type":"input_image"/g)).toHaveLength(50)
+    expect(body).toContain("Historical image omitted")
+    expect(body).toContain('"content":"hi"')
+    expect(payload).toEqual(original)
+  })
+
+  test.each(["http", "websocket"] as const)(
+    "rejects oversized active image input before opening %s transport",
+    async (transport) => {
+      const payload: ResponsesPayload = {
+        model: "gpt-test",
+        stream: true,
+        input: [
+          {
+            role: "user",
+            content: Array.from({ length: 51 }, () => ({
+              type: "input_image",
+              file_id: "image",
+            })),
+          },
+        ],
+      }
+      let rejected: unknown
+      try {
+        await createResponses(payload, {
+          initiator: "user",
+          requestId: "images",
+          vision: true,
+          transport,
+        })
+      } catch (error) {
+        rejected = error
+      }
+      expect(rejected).toBeInstanceOf(Error)
+      expect((rejected as Error).message).toContain(
+        "No current images were discarded",
+      )
+      expect(fetchMock).not.toHaveBeenCalled()
+    },
+  )
+
   test("keeps HTTP responses requests using x-initiator header", async () => {
     const payload: ResponsesPayload = {
       input: "hello",

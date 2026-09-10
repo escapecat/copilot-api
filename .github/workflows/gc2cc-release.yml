@@ -1,0 +1,48 @@
+name: gc2cc release
+
+on:
+  push:
+    branches: [gc2cc/stable]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: gc2cc-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.repository == 'escapecat/copilot-api' && github.ref == 'refs/heads/gc2cc/stable'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.0'
+      - run: bun install --frozen-lockfile
+      - run: bun run lint:all
+      - run: bun run typecheck
+      - run: bun test
+      - run: bun run build
+      - name: Publish immutable npm tarball and digest (no upstream npm publish)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./package.json').version")
+          tag="gc2cc-v$version"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release already exists; never replace its assets."
+            exit 0
+          fi
+          package=$(npm pack --ignore-scripts --json | node -e "let s='';process.stdin.on('data',x=>s+=x).on('end',()=>console.log(JSON.parse(s)[0].filename))")
+          sha256sum "$package" > "$package.sha256"
+          gh release create "$tag" "$package" "$package.sha256" \
+            --target "$GITHUB_SHA" --title "gc2cc proxy $version" \
+            --notes "Owned gc2cc build. Source: $GITHUB_SHA. Upstream baseline 2.3.3; preserves current-turn images and budgets historical Copilot Responses images. No upstream npm namespace is published."
