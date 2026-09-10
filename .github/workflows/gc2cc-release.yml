@@ -27,7 +27,7 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run lint:all
       - run: bun run typecheck
-      - run: bun test
+      - run: bun test --isolate
       - run: bun run build
       - name: Publish immutable npm tarball and digest (no upstream npm publish)
         env:
