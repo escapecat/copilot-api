@@ -40,6 +40,7 @@ import {
   createResponsesHttpEventStream,
   fetchResponsesWithLifecycle,
 } from "~/services/responses-http"
+import { budgetCopilotResponseImages } from "./responses-image-budget"
 
 interface ResponsesRequestOptions {
   vision: boolean
@@ -67,6 +68,14 @@ export const createResponses = async (
 ): Promise<CreateResponsesReturn> => {
   if (!state.copilotToken) throw new Error("Copilot token not found")
 
+  const budgeted = budgetCopilotResponseImages(payload)
+  payload = budgeted.payload
+  if (budgeted.omitted > 0) {
+    consola.warn(
+      `Omitted ${budgeted.omitted} oldest historical image(s) from this Copilot Responses request; original history is unchanged`,
+    )
+  }
+
   const headers: Record<string, string> = {
     ...copilotHeaders(state, requestId, vision),
     "x-initiator": initiator,
@@ -77,7 +86,7 @@ export const createResponses = async (
   prepareForCompact(headers, compactType)
 
   // service_tier is not supported by github copilot
-  payload.service_tier = undefined
+  payload = { ...payload, service_tier: undefined }
 
   consola.log(`<-- model: ${payload.model}`)
 
